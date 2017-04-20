@@ -11,25 +11,48 @@ from sqlalchemy import *
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import CompileError
 
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
 # Initialise the Flask app ##
 application = Flask(__name__)
 application.config['PROPAGATE_EXCEPTIONS'] = True
 
-## The "database ~ should really be pulled from somewhere else - like a spreadsheet"
-
-clientlist = [{'slug':'multitouch', 'hackathon':'Lenovo Multi-Touch Multi-Hack'}, {'slug':'fordsmartjourney', 'hackathon':'Ford Smart Journey'}, {'slug':'intelligentworld', 'hackathon':'GE Predix'}, {'slug':'apachespark', 'hackathon':'Apache Spark Makers Build'}, {'slug':'openshift', 'hackathon':'OpenShift Code Healthy'}, {'slug':'code4cabs', 'hackathon':'Ford Code For Taxicabs'}, {'slug':'awschatbot', 'hackathon':'AWS Serverless Chatbot Competition'}, {'slug':'hackproductivity', 'hackathon':'Microsoft Hack Productivity'}, {'slug':'godetroit', 'hackathon':'Ford Go Detroit'}, {'slug':'indore', 'hackathon':'Ford Hack & Roll Indore'}, {'slug':'gehealthcloud', 'hackathon':'GE Health Cloud Innovation Challenge'}, {'slug':'alexa', 'hackathon':'Amazon Alexa Skills Challenge'}]
-
-keywords = {'multitouch': ['multitouch.devpost.com', 'j.mp/1QMGD4k', 'Multi-Touch Multi-Hack'], 'fordsmartjourney': ['#FordMxSmartJourney', 'j.mp/1T7uZCi', 'ford smart journey', 'fordsmartjourney.devpost.com'], 'intelligentworld': ['#IntelligentWorld','intelligentworld.devpost.com', 'j.mp/1SiGFrN'], 'apachespark': ['j.mp/22iwfJF', '#SparkBizApps', 'apachespark.devpost.com'], 'openshift': ['j.mp/202KkKz', '#CodeHealthy', 'openshift.devpost.com'], 'code4cabs': ['j.mp/29q0BW5', '#Code4Taxicabs', 'code4cabs.devpost.com'], 'awschatbot': ['awschatbot.devpost.com','amzn.to/2aMC1zP','Serverless Chatbot'], 'hackproductivity': ['j.mp/2drxfMU', 'hackproductivity.devpost.com', '#hackproductivity'], 'godetroit': ['j.mp/2coRXXy', '#godetroit', 'godetroit.devpost.com', 'bit.ly/2ffkyVb', 'godetroit.chaordix.com/dashboard', 'godetroit.chaordix.com/'], 'indore': ['Ford Indore', 'j.mp/2eAbidt', 'Hack & Roll Indore', 'hack-indore.devpost.com'], 'gehealthcloud': ['http://j.mp/2eB4gSM', 'Gehealthcloud.devpost.com','GE healthcloud innovation challenge','#GEHealthCloud'], 'alexa': ['alexa.devpost.com', 'amzn.to/2lMETVm', 'Alexa Skills Challenge', 'j.mp/2aOLsma', 'Alexa Hackathon', '@alexadevs #hackathon'
-]}
-
 @application.route('/', defaults={'path': None})
 @application.route('/<path:path>')
 def main(path=None):
+    scope = ['https://spreadsheets.google.com/feeds']
+
+    pk = "-----BEGIN PRIVATE KEY-----{key}-----END PRIVATE KEY-----\n".format(key=environ['PK'])
+
+    key_dict = {
+        "type": "service_account",
+        "project_id": "devposthackathontweets",
+        "private_key_id": "1d02a04353966c7d0f48be5dc6780c20177f96bd",
+        "private_key": pk,
+        "client_email": "hackathon-manager@devposthackathontweets.iam.gserviceaccount.com",
+        "client_id": "105326323772464143676",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://accounts.google.com/o/oauth2/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/hackathon-manager%40devposthackathontweets.iam.gserviceaccount.com"
+    }
+
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+    client = gspread.authorize(creds)
+
+    # Find a workbook by name and open the first sheet
+    # Make sure you use the right name here.
+    sheet = client.open("Hackathon Twitter").sheet1
+
+    # Extract and print all of the values
+    sheets_data = sheet.get_all_records()
+
     if path is None:
-        return render_template('index.html', clients=clientlist)
+        return render_template('index.html', payload=sheets_data)
     else:
-        c = getClient(path)
-        k = getKeywords(path)
+        c = getClient(path, sheets_data)
+        k = getKeywords(path, sheets_data)
         d = getTweets(k)
         return render_template('report.html', client=c, data=d)
 
@@ -55,17 +78,19 @@ def getTweets(keywords):
     except TwitterSearchException as e:
         print(e)
 
-def getKeywords(path):
-    ## this should be a db call (nosql?)
-    kw=[]
-    for k in keywords[path]:
-        #print k
-        kw.append(k)
+def getKeywords(path, sheets_data):
+    for item in sheets_data:
+        print item
+        #hackathon = 0
+        if item['hackathon_slug'] == path:
+            hackathon = item
+
+    kw = hackathon['hackathon_tags'].split(", ")
     return kw
 
-def getClient(path):
+def getClient(path, sheets_data):
     client = None
-    for c in clientlist:
-        if c['slug'] == path:
-            client = c['hackathon']
+    for item in sheets_data:
+        if item['hackathon_slug'] == path:
+            client = item['hackathon_name']
     return client
